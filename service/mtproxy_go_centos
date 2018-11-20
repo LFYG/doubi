@@ -1,20 +1,22 @@
 #!/bin/bash
+# chkconfig: 2345 90 10
+# description: MTProxy Golang
 
 ### BEGIN INIT INFO
-# Provides:          MTProxy
-# Required-Start:    $network $local_fs $remote_fs
-# Required-Stop:     $network $local_fs $remote_fs
+# Provides:          MTProxy Golang
+# Required-Start:    $network $syslog
+# Required-Stop:     $network
 # Default-Start:     2 3 4 5
 # Default-Stop:      0 1 6
-# Short-Description: Simple MT-Proto proxy
-# Description:       Start or stop the MTProxy
+# Short-Description: Simple MT-Proto-go proxy
+# Description:       Start or stop the MTProxy-go
 ### END INIT INFO
 
 NAME="MTProxy"
-NAME_BIN="./mtproto-proxy"
-FILE="/usr/local/mtproxy"
-CONF="/usr/local/mtproxy/mtproxy.conf"
-LOG="/usr/local/mtproxy/mtproxy.log"
+NAME_BIN="./mtg "
+FILE="/usr/local/mtproxy-go"
+CONF="/usr/local/mtproxy-go/mtproxy.conf"
+LOG="/usr/local/mtproxy-go/mtproxy.log"
 
 Green_font_prefix="\033[32m" && Red_font_prefix="\033[31m" && Green_background_prefix="\033[42;37m" && Red_background_prefix="\033[41;37m" && Font_color_suffix="\033[0m"
 Info="${Green_font_prefix}[信息]${Font_color_suffix}"
@@ -22,7 +24,7 @@ Error="${Red_font_prefix}[错误]${Font_color_suffix}"
 RETVAL=0
 
 check_running(){
-	PID=`ps -ef |grep "${NAME_BIN}" |grep -v "grep" |grep -v "init.d" |grep -v "service" |awk '{print $2}'`
+	PID=$(ps -ef |grep "${NAME_BIN}" |grep -v "grep" |grep -v "init.d" |grep -v "service" |awk '{print $2}')
 	if [[ ! -z ${PID} ]]; then
 		return 0
 	else
@@ -30,13 +32,20 @@ check_running(){
 	fi
 }
 read_config(){
-	[[ ! -e ${CONF} ]] && echo -e "${Error} MTProxy 配置文件不存在 !" && exit 1
+	[[ ! -e ${CONF} ]] && echo -e "${Error} $NAME 配置文件不存在 !" && exit 1
 	port=$(cat ${CONF}|grep 'PORT = '|awk -F 'PORT = ' '{print $NF}')
-	passwd=$(cat ${CONF}|grep 'PASSWORD = '|awk -F 'PASSWORD = ' '{print $NF}')
+	password=$(cat ${CONF}|grep 'PASSWORD = '|awk -F 'PASSWORD = ' '{print $NF}')
 	tag=$(cat ${CONF}|grep 'TAG = '|awk -F 'TAG = ' '{print $NF}')
-	nat=$(cat ${CONF}|grep 'NAT = '|awk -F 'NAT = ' '{print $NF}')
-	[[ ! -z "${tag}" ]] && tag="-P \"${tag}\""
-	[[ ! -z "${nat}" ]] && nat="--nat-info \"${nat}\""
+	nat_ipv4=$(cat ${CONF}|grep 'NAT-IPv4 = '|awk -F 'NAT-IPv4 = ' '{print $NF}')
+	nat_ipv6=$(cat ${CONF}|grep 'NAT-IPv6 = '|awk -F 'NAT-IPv6 = ' '{print $NF}')
+	secure=$(cat ${CONF}|grep 'SECURE = '|awk -F 'SECURE = ' '{print $NF}')
+	[[ ! -z "${nat_ipv4}" ]] && nat_ipv4="-4 \"${nat_ipv4}\""
+	[[ ! -z "${nat_ipv6}" ]] && nat_ipv6="-6 \"${nat_ipv6}\""
+	if [[ "${secure}" == "YES" ]]; then
+		secure="-s"
+	else
+		secure=""
+	fi
 }
 do_start(){
 	check_running
@@ -47,13 +56,13 @@ do_start(){
 		cd ${FILE}
 		echo -e "${Info} $NAME 启动中..."
 		ulimit -n 51200
-		eval nohup ./mtproto-proxy -u nobody -p 65432 -H ${port} -S "${passwd}" $(echo ${tag}) $(echo ${nat}) --aes-pwd proxy-secret proxy-multi.conf -M 1 >> "${LOG}" 2>&1 &
+		eval nohup ./mtg -b 0.0.0.0 -p ${port} $(echo ${nat_ipv4}) $(echo ${nat_ipv6}) -q 65436 $(echo ${secure}) "${password}" "${tag}" >> "${LOG}" 2>&1 &
 		sleep 2s
 		check_running
 		if [[ $? -eq 0 ]]; then
 			echo -e "${Info} $NAME 启动成功 !"
 		else
-			echo -e "${Error} $NAME 启动失败 !"
+			echo -e "${Error} $NAME 启动失败 !请查看日志文件检查问题所在。"
 		fi
 	fi
 }
@@ -90,7 +99,7 @@ case "$1" in
 	do_$1
 	;;
 	*)
-	echo "使用方法: $0 { start | stop | restart | status }"
+	echo -e "使用方法: $0 { start | stop | restart | status }"
 	RETVAL=1
 	;;
 esac
